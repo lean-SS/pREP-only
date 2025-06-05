@@ -1,0 +1,22 @@
+{
+  "version": "1.2",
+  "dbname": "Abau_plasmid-REPs_db",
+  "dbtype": "Protein",
+  "db-version": 5,
+  "description": "Abau_plasmid-REPs.fasta",
+  "number-of-letters": 115691,
+  "number-of-sequences": 339,
+  "last-updated": "2025-03-14T23:11:00",
+  "number-of-volumes": 1,
+  "bytes-total": 190912,
+  "bytes-to-cache": 118863,
+  "files": [
+    "Abau_plasmid-REPs_db.pdb",
+    "Abau_plasmid-REPs_db.phr",
+    "Abau_plasmid-REPs_db.pin",
+    "Abau_plasmid-REPs_db.pot",
+    "Abau_plasmid-REPs_db.psq",
+    "Abau_plasmid-REPs_db.ptf",
+    "Abau_plasmid-REPs_db.pto"
+  ]
+}

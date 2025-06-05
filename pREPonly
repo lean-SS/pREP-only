@@ -1,0 +1,184 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Getopt::Long;
+
+# Initialize the -h flag
+my $help;
+my $query_file;
+my $db_name;
+my $split;
+my $slice;
+
+# Parse command-line arguments
+GetOptions(
+    "h"          => \$help,          # Help flag
+    "query=s"    => \$query_file,    # Query file
+    "db=s"       => \$db_name,       # BLAST database
+    "split"      => \$split,         # 'split' option for blastn
+    "slice"      => \$slice,         # 'slice' option to show nucl hit location
+);
+
+# If -h flag is passed, print the help message
+if ($help) {
+    print "
+                 _________    _________   ________                                         
+                |    ___  |  |  _______| |  ____  |                     __                 
+         _____  |   |   |  | |  |        |  |   |  |   _____   ______  |  | __     __
+        |  __ | |   |___|  | |  |______  |  |___|  |  |  _  | |   _  | |  ||  |   |  |
+        | |  | ||   __    /  |   ______| |    ____/   | | | | |  | |  ||  ||  |   |  |
+        | |__| ||   | |   |  |  |        |   |        | | | | |  | |  ||  ||  |___|  |
+        |  ___/ |   |  |   | |  |______  |   |  ====  | |_| | |  | |  ||  | |_____   |
+        |  |    |___|   |___||_________| |___|        |_____| |__| |__||__|   ____|  |
+        |__|                                 (or pepperoni)                  |_______/
+
+                Screening tool for Acinetobacter baumannii plasmid Rep proteins.        
+
+    Function: 
+    ./pREPonly -h 				        Help page
+    ./pREPonly -query -db			        Screens for Rep proteins
+    ./pREPonly -split -slice -query -db			Screens for R3-type plasmids and report
+    
+    ----------------------------------------------------------------------------------
+    | Database used in this mini tool was taken from Lam & Hamidian (2024).          |
+    | Citation: Lam, Margaret M. C., and Mehrad Hamidian. 2024.                      |
+    | “Examining the Role of Acinetobacter baumannii Plasmid Types in Disseminating  |
+    | Antimicrobial Resistance.” npj Antimicrobials and Resistance 2(1).             |
+    ----------------------------------------------------------------------------------   
+        \n";
+    exit 0;
+}
+
+# Check if query file and database are provided
+unless ($query_file && $db_name) {
+    print "Too bad! You must provide both -query and -db options.\n";
+    print "Usage: pREPonly -query <query_file> -db <database>\n";
+    exit 1;
+}
+
+# Check if the '-split' flag is passed (it will use blastn instead of blastx)
+if ($split) {
+    run_blastn($query_file, $db_name);
+    # If '-slice' flag is also passed, extract columns 1, 7, and 8 from the output
+    if ($slice) {
+        extract_columns("resultsN.txt");
+    }
+} else {
+    run_blastx($query_file, $db_name);
+}
+
+# Function for the '-split' option
+sub run_blastn {
+    my ($query_file, $db_name) = @_;
+    my $blast_command = "blastn -query $query_file -db $db_name -out resultsN.txt -outfmt 6";
+    print "Just split it! Screening FASTA for plasmid sequences... Please wait\n";
+    system($blast_command);
+}
+
+# Function for the '-slice' option
+sub extract_columns {
+    my ($filename) = @_;
+    
+    # Open the resultsN file
+    open my $fh, '<', $filename or die "Aw-shucks! Cannot open file $filename: $!\n";
+    
+    # Print the process executed
+    print "Split n' Slice! Extracting plasmid nucleotide locations from $filename:\n";
+    
+    # Read through the file and extract the desired columns
+    while (my $line = <$fh>) {
+        chomp $line;
+        my @fields = split(/\t/, $line);  # BLAST results are tab-delimited
+        
+        # Ensure there are enough columns before attempting to extract
+        if (@fields >= 8) {
+            print "$fields[0]\t$fields[6]\t$fields[7] \n";  # Print columns 1, 7, and 8
+        }
+    }
+    
+    close $fh;
+}
+
+# Function to handle blastx (protein screening)
+sub run_blastx {
+    my ($query_file, $db_name) = @_;
+    my $blast_command = "blastx -query $query_file -db $db_name -out results.txt -outfmt 6 -evalue 10e-5";
+    print "Searching for plasmid Rep... Please wait\n";
+    
+    # Run the BLAST command using system()
+    my $exit_status = system($blast_command);
+    
+    # Check if the BLAST command ran successfully
+    if ($exit_status == 0) {
+        print "Rep protein search completed successfully. Results are in 'results.txt'.\n";
+    } else {
+        print "Oh no! Error: BLAST failed with exit status $exit_status.\n";
+    exit 1;
+    }
+    
+    # Extract the top result and print it in a table format
+    extract_and_print_top_hit($query_file);
+    
+    exit 0;
+    
+    # Function to extract the top BLAST result and print it in table form
+    sub extract_and_print_top_hit {
+        my ($query_filename) = @_;
+
+    # Open the results file
+        open my $fh, '<', 'results.txt' or die "Could not open 'results.txt' for reading: $!\n";
+
+    # Initialize variables to store the top hit's information
+        my $top_hit_header;
+        my $top_hit_values;
+
+    # Read through the BLAST result file
+        while (my $line = <$fh>) {
+            chomp $line;
+
+        # Skip any comment lines
+            next if $line =~ /^#/;
+
+        # Extract the first hit:
+        # Extracting the best plasmid hit's header (the sseqid) and other values (e.g., pident, evalue, etc.)
+            if ($line =~ /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/) {
+            # Assign values from the first line (top hit)
+                $top_hit_header = $2;  # sseqid is typically the header
+                $top_hit_values = join("   |    ", $3, $4, $5, $6, $11);  # Other values (e.g., pident, length, evalue)
+                last;  # Only take the first result (top hit)
+            }
+        }
+
+        close $fh;
+        
+        # Check if a top hit was found and print the table
+         if ($top_hit_header) {
+            print "\n|   Query Filename   |    Best Plasmid Hit     |  pident   | length   |mismatch| gapopen |  evalue  |\n";
+            print "|--------------------|-------------------------|-----------|----------|--------|---------|----------|\n";
+            print "|    $query_filename   |  $top_hit_header  | $top_hit_values |\n";
+            print "
+            ------------------------------------------------------------------------ 
+            | Note: The order of nomenclature displayed in 'Best Plasmid Hit' was  |
+            |       'nearest plasmid match-Rep type-Aci type-R type'.              |
+            |       Example: pSP304-rep3-Aci3-r3T5; indicating plasmid pSP304 of   |
+            |       Rep3, Aci3 and R3-T5 type.                                     |
+            |                                                                      |
+            | Don't forget to cite:                                                |
+            | Lam, Margaret M. C., and Mehrad Hamidian. 2024.                      | 
+            | Examining the Role of Acinetobacter baumannii Plasmid Types in       |
+            | Disseminating Antimicrobial Resistance. npj Antimicrobials and       |
+            | Resistance 2(1).                                                     |
+            ------------------------------------------------------------------------ \n";
+            print " 
+                                                                 _______________
+                                                               /*  '.           |  ___  
+                                                        .----.   *  |            |/  /_
+            Thank you for using pREPonly (pepperoni)!  | *    | *   |            |    _'.
+                                                       :    * :   * .,,,,,,,,,,,,|'._'.
+                                                       :._*_..: .../__________..| 
+             \n";
+        } else {
+            print "Boo-Hoo! No plasmid Rep results found.\n";
+        }
+        }    
+}
